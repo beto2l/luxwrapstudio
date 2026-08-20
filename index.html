@@ -1183,7 +1183,7 @@
             <div class="footer-logo">
                 <img src="logo.jpeg" alt="LuxWrap Studio">
             </div>
-            <p class="footer-text">&copy; 2025 LuxWrap Studio. <span data-en="All rights reserved." data-es="Todos los derechos reservados.">All rights reserved.</span> Frankfort, KY · (859) 636-7294</p>
+            <p class="footer-text">&copy; <span id="current-year">2026</span> LuxWrap Studio. <span data-en="All rights reserved." data-es="Todos los derechos reservados.">All rights reserved.</span> Frankfort, KY · (859) 636-7294</p>
             <div class="footer-social">
                 <a href="https://www.tiktok.com/@luxwrap.studio" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><i class="fab fa-tiktok"></i></a>
                 <a href="https://www.instagram.com/luxwrap_studio/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
@@ -1326,6 +1326,9 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         }
     });
 });
+
+// Actualizar automáticamente el año del footer
+document.getElementById('current-year').textContent = new Date().getFullYear();
 </script>
 
 </body>
