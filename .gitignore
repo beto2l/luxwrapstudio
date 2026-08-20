@@ -1,0 +1,28 @@
+# Logs
+deploy.log
+*.log
+
+# Configuración sensible del servidor
+scripts/config.php
+
+# Uploads de usuarios (se manejan localmente en el servidor)
+uploads/*
+!uploads/.gitkeep
+!uploads/.htaccess
+
+# Datos locales del servidor
+data/portfolio.json
+
+# Caché
+cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
