@@ -3,7 +3,9 @@ deploy.log
 *.log
 
 # Configuración sensible del servidor
-scripts/config.php
+.env
+.env.*
+!.env.example
 
 # Uploads de usuarios (se manejan localmente en el servidor)
 uploads/*

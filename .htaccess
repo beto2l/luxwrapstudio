@@ -9,22 +9,17 @@ RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 # Proteger archivos sensibles
-<FilesMatch "^(deploy\.log|\.gitignore|\.git|README\.md)$">
+<FilesMatch "^(\.env|\.env\..*|deploy\.log|\.gitignore|\.git|README\.md)$">
+    Require all denied
     Deny from all
 </FilesMatch>
 
-# Proteger directorio .git
+# Proteger directorio .git y archivos ocultos sensibles
 RedirectMatch 404 /\.git
-
-# Proteger scripts PHP internos (excepto deploy.php)
-<FilesMatch "^scripts/">
-    Deny from all
-</FilesMatch>
+RedirectMatch 404 /\.env
 
 # Proteger data directory de acceso directo
-<Directory "data">
-    Deny from all
-</Directory>
+RedirectMatch 404 ^/data/
 
 # Caché de archivos estáticos
 <IfModule mod_expires.c>

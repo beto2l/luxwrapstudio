@@ -1,124 +1,144 @@
 <?php
 /**
- * LuxWrap Studio - Auto Deploy Script
- * Descarga automáticamente los últimos cambios desde GitHub
- * 
- * URL: https://luxwrapstudio.com/deploy.php?secret=TU_SECRET_KEY
- * 
- * SEGURIDAD: Cambia DEPLOY_SECRET antes de subir a producción
+ * LuxWrap Studio - Deploy/Update endpoint
+ * Lee configuración sensible desde .env.
+ * Permite actualizar el sitio desde GitHub usando un botón en update.html.
  */
 
-// =====================================================
-// CONFIGURACIÓN - CAMBIAR ESTOS VALORES
-// =====================================================
+require_once __DIR__ . '/scripts/env-loader.php';
 
-// Clave secreta para proteger el endpoint (CAMBIAR OBLIGATORIO)
-define('DEPLOY_SECRET', 'luxwrap_deploy_2026_' . md5('change-this-secret'));
-
-// Ruta donde está el sitio en el servidor
-define('SITE_PATH', '/home/luxwrapstudio/public_html'); // CAMBIAR según tu hosting
-
-// Rama a usar
-define('GIT_BRANCH', 'main');
-
-// Log file
-define('LOG_FILE', __DIR__ . '/deploy.log');
-
-// =====================================================
-// NO MODIFICAR DEBAJO DE ESTA LÍNEA
-// =====================================================
-
-// Headers
 header('Content-Type: application/json; charset=utf-8');
 
-// Verificar token de seguridad
-if (!isset($_GET['secret']) || $_GET['secret'] !== DEPLOY_SECRET) {
+$secret = luxwrap_env('DEPLOY_SECRET');
+$providedSecret = $_POST['secret'] ?? $_GET['secret'] ?? '';
+
+if (!$secret || !hash_equals($secret, $providedSecret)) {
     http_response_code(403);
-    die(json_encode(['success' => false, 'message' => 'Access denied']));
-}
-
-// Función para escribir en el log
-function writeLog($message) {
-    $timestamp = date('Y-m-d H:i:s');
-    file_put_contents(LOG_FILE, "[$timestamp] $message\n", FILE_APPEND);
-}
-
-// Función para ejecutar comandos
-function executeCommand($command) {
-    writeLog("Ejecutando: $command");
-    exec($command . ' 2>&1', $output, $return);
-    $output_str = implode("\n", $output);
-    writeLog("Output: $output_str");
-    writeLog("Return code: $return");
-    return ['output' => $output_str, 'return' => $return];
-}
-
-// Iniciar despliegue
-writeLog("===== INICIO DE DESPLIEGUE =====");
-writeLog("IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
-
-$results = [];
-
-// Cambiar al directorio del sitio
-chdir(SITE_PATH);
-
-// 1. Verificar que es un repo git
-if (!is_dir('.git')) {
-    writeLog("ERROR: No es un repositorio Git");
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => 'El directorio no es un repositorio Git. Ejecuta primero: git clone git@github.com:beto2l/luxwrapstudio.git .'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Acceso denegado']);
     exit;
 }
 
-// 2. Hacer git fetch + reset para forzar la actualización
-writeLog("Descargando últimos cambios...");
+$sitePath = rtrim(luxwrap_env('SITE_PATH', __DIR__), '/');
+$branch = luxwrap_env('GIT_BRANCH', 'main');
+$repoZipUrl = luxwrap_env('GITHUB_ZIP_URL', 'https://github.com/beto2l/luxwrapstudio/archive/refs/heads/' . $branch . '.zip');
+$logFile = __DIR__ . '/deploy.log';
 
-// Primero fetch
-$result = executeCommand('git fetch origin ' . GIT_BRANCH);
-$results[] = ['step' => 'fetch', 'output' => $result['output'], 'success' => $result['return'] === 0];
+function deploy_log($message) {
+    global $logFile;
+    @file_put_contents($logFile, '[' . date('Y-m-d H:i:s') . '] ' . $message . "\n", FILE_APPEND);
+}
 
-// Luego reset al último commit remoto
-$result = executeCommand('git reset --hard origin/' . GIT_BRANCH);
-$results[] = ['step' => 'reset', 'output' => $result['output'], 'success' => $result['return'] === 0];
+function run_cmd($command) {
+    deploy_log('CMD: ' . $command);
+    exec($command . ' 2>&1', $output, $code);
+    $text = implode("\n", $output);
+    deploy_log('OUT: ' . $text);
+    deploy_log('CODE: ' . $code);
+    return ['code' => $code, 'output' => $text];
+}
 
-if ($result['return'] !== 0) {
-    writeLog("ERROR: No se pudo actualizar");
+function recursive_copy($src, $dst) {
+    $excluded = ['.git', '.env', 'deploy.log'];
+    $items = scandir($src);
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..' || in_array($item, $excluded, true)) {
+            continue;
+        }
+
+        $srcPath = $src . '/' . $item;
+        $dstPath = $dst . '/' . $item;
+
+        if ($item === 'uploads' || $item === 'data') {
+            if (!is_dir($dstPath)) {
+                @mkdir($dstPath, 0755, true);
+            }
+            continue;
+        }
+
+        if (is_dir($srcPath)) {
+            if (!is_dir($dstPath)) {
+                @mkdir($dstPath, 0755, true);
+            }
+            recursive_copy($srcPath, $dstPath);
+        } else {
+            @copy($srcPath, $dstPath);
+            @chmod($dstPath, 0644);
+        }
+    }
+}
+
+function update_with_git($sitePath, $branch) {
+    chdir($sitePath);
+    $steps = [];
+    $steps[] = ['step' => 'git fetch', 'result' => run_cmd('git fetch origin ' . escapeshellarg($branch))];
+    $steps[] = ['step' => 'git reset', 'result' => run_cmd('git reset --hard origin/' . escapeshellarg($branch))];
+    $ok = end($steps)['result']['code'] === 0;
+    return ['success' => $ok, 'method' => 'git', 'steps' => $steps];
+}
+
+function update_with_zip($sitePath, $repoZipUrl) {
+    if (!class_exists('ZipArchive')) {
+        return ['success' => false, 'method' => 'zip', 'message' => 'ZipArchive no está disponible en este hosting'];
+    }
+
+    $tmpBase = sys_get_temp_dir() . '/luxwrap_deploy_' . uniqid();
+    $zipFile = $tmpBase . '.zip';
+    @mkdir($tmpBase, 0755, true);
+
+    deploy_log('Descargando ZIP: ' . $repoZipUrl);
+    $zipData = @file_get_contents($repoZipUrl);
+    if ($zipData === false) {
+        return ['success' => false, 'method' => 'zip', 'message' => 'No se pudo descargar el ZIP de GitHub. Si el repo es privado, agrega un token o usa Git SSH.'];
+    }
+    file_put_contents($zipFile, $zipData);
+
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile) !== true) {
+        return ['success' => false, 'method' => 'zip', 'message' => 'No se pudo abrir el ZIP descargado'];
+    }
+    $zip->extractTo($tmpBase);
+    $zip->close();
+
+    $folders = glob($tmpBase . '/*', GLOB_ONLYDIR);
+    if (!$folders) {
+        return ['success' => false, 'method' => 'zip', 'message' => 'El ZIP no contiene carpeta de proyecto'];
+    }
+
+    recursive_copy($folders[0], $sitePath);
+    @unlink($zipFile);
+    return ['success' => true, 'method' => 'zip', 'message' => 'Archivos copiados desde ZIP de GitHub'];
+}
+
+deploy_log('===== INICIO DE ACTUALIZACIÓN =====');
+deploy_log('IP: ' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+deploy_log('SITE_PATH: ' . $sitePath);
+
+if (!is_dir($sitePath)) {
     http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Error al descargar cambios',
-        'details' => $results
-    ]);
+    echo json_encode(['success' => false, 'message' => 'SITE_PATH no existe: ' . $sitePath], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// 3. Configurar permisos
-writeLog("Configurando permisos...");
-executeCommand('chmod -R 755 assets admin scripts 2>/dev/null');
-executeCommand('chmod -R 777 uploads data 2>/dev/null');
-executeCommand('chmod 644 data/*.json 2>/dev/null');
-
-// 4. Limpiar caché si existe
-if (is_dir(SITE_PATH . '/cache')) {
-    writeLog("Limpiando caché...");
-    executeCommand('rm -rf cache/*');
+if (is_dir($sitePath . '/.git')) {
+    $result = update_with_git($sitePath, $branch);
+} else {
+    $result = update_with_zip($sitePath, $repoZipUrl);
 }
 
-// 5. Obtener último commit
-$lastCommit = executeCommand('git log -1 --pretty=format:"%h - %s (%cr)"');
+@chmod($sitePath . '/assets', 0755);
+@chmod($sitePath . '/scripts', 0755);
+@chmod($sitePath . '/uploads', 0775);
+@chmod($sitePath . '/data', 0775);
 
-writeLog("===== DESPLIEGUE COMPLETADO =====");
+deploy_log('RESULT: ' . json_encode($result));
+deploy_log('===== FIN DE ACTUALIZACIÓN =====');
 
-// Respuesta exitosa
-http_response_code(200);
+http_response_code($result['success'] ? 200 : 500);
 echo json_encode([
-    'success' => true,
-    'message' => 'Sitio actualizado correctamente',
+    'success' => $result['success'],
+    'message' => $result['success'] ? 'Sitio actualizado correctamente desde GitHub' : 'No se pudo actualizar el sitio',
     'timestamp' => date('Y-m-d H:i:s'),
-    'last_commit' => $lastCommit['output'],
-    'steps' => $results
+    'method' => $result['method'] ?? 'unknown',
+    'details' => $result
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 ?>

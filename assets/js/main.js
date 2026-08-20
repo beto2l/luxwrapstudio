@@ -207,7 +207,8 @@ if (form) {
         }
 
         try {
-            // Try PHP backend first
+            // Web3Forms free plan requires client-side submission. The key identifies the form inbox;
+            // sensitive deploy/admin secrets remain in .env on the server.
             const formData = new FormData(form);
 
             // Add reCAPTCHA token if available
@@ -220,37 +221,42 @@ if (form) {
                 }
             }
 
-            let response;
-            try {
-                response = await fetch('scripts/contact-form.php', {
-                    method: 'POST',
-                    body: formData
-                });
-            } catch (phpErr) {
-                // PHP not available, try Formspree fallback
-                response = await fetch('https://formspree.io/f/xwpevvnn', {
-                    method: 'POST',
-                    body: formData,
-                    headers: { 'Accept': 'application/json' }
-                });
-            }
+            formData.append('access_key', 'd3e22b1d-c74f-4e6b-b8c7-3696d39e20fc');
+            formData.append('subject', 'New Quote Request — LuxWrap Studio Website');
+            formData.append('from_name', 'LuxWrap Studio Website');
 
-            if (response.ok) {
-                form.style.display = 'none';
-                document.getElementById('formSuccess').classList.add('show');
-                setLang(currentLang);
+            const response = await fetch('https://api.web3forms.com/submit', {
+                method: 'POST',
+                body: formData,
+                headers: { 'Accept': 'application/json' }
+            });
+
+            const result = await response.json().catch(() => ({}));
+
+            if (result.success === true || (response.ok && result.success !== false)) {
+                showContactSuccess(form);
             } else {
-                // Fallback to mailto
-                openMailtoFallback(form);
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
+                throw new Error(result.message || 'Form submission failed');
             }
         } catch (err) {
-            openMailtoFallback(form);
+            console.error('Contact form error:', err);
+            if (errorDiv) {
+                errorDiv.textContent = currentLang === 'es'
+                    ? 'No pudimos confirmar el envío en pantalla. Si ya recibiste confirmación por correo, puedes ignorar este aviso; si no, llámanos al (859) 636-7294.'
+                    : 'We could not confirm the submission on screen. If you already received email confirmation, you can ignore this notice; otherwise, call us at (859) 636-7294.';
+                errorDiv.classList.add('show');
+            }
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
     });
+}
+
+function showContactSuccess(form) {
+    form.style.display = 'none';
+    const successBox = document.getElementById('formSuccess');
+    if (successBox) successBox.classList.add('show');
+    setLang(currentLang);
 }
 
 function openMailtoFallback(form) {

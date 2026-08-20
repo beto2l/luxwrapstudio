@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Actualizar LuxWrap Studio</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top left, #2d0b4f, #07070c 55%, #020204);
+            color: #fff;
+            padding: 24px;
+        }
+        .card {
+            width: min(620px, 100%);
+            padding: 32px;
+            border: 1px solid rgba(190, 70, 255, .35);
+            border-radius: 22px;
+            background: rgba(12, 12, 22, .88);
+            box-shadow: 0 20px 80px rgba(0,0,0,.45);
+        }
+        h1 { margin: 0 0 12px; color: #d64cff; }
+        p { line-height: 1.55; color: #d8d8e8; }
+        label { display: block; margin-top: 22px; margin-bottom: 8px; font-weight: 700; }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,.18);
+            background: rgba(255,255,255,.08);
+            color: #fff;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            margin-top: 18px;
+            padding: 15px 18px;
+            border: 0;
+            border-radius: 12px;
+            background: linear-gradient(90deg, #8a2cff, #ff35d4);
+            color: #fff;
+            font-weight: 800;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:disabled { opacity: .65; cursor: wait; }
+        pre {
+            display: none;
+            margin-top: 20px;
+            white-space: pre-wrap;
+            background: #090912;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 12px;
+            padding: 16px;
+            max-height: 360px;
+            overflow: auto;
+        }
+        .ok { color: #65ff9a; }
+        .bad { color: #ff7777; }
+        .small { font-size: 13px; opacity: .8; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Actualizar LuxWrap Studio</h1>
+        <p>Usa este botón para traer los últimos cambios desde GitHub al hosting, sin tener que escribir una URL especial cada vez.</p>
+        <p class="small">El secreto se guarda solo en este navegador mediante <code>localStorage</code>. No está escrito dentro de esta página.</p>
+
+        <label for="secret">Secreto de actualización</label>
+        <input id="secret" type="password" autocomplete="off" placeholder="Pega aquí el DEPLOY_SECRET">
+        <button id="updateBtn">Actualizar sitio desde GitHub</button>
+        <pre id="result"></pre>
+    </main>
+
+    <script>
+        const secretInput = document.getElementById('secret');
+        const button = document.getElementById('updateBtn');
+        const resultBox = document.getElementById('result');
+
+        secretInput.value = localStorage.getItem('luxwrap_deploy_secret') || '';
+
+        button.addEventListener('click', async () => {
+            const secret = secretInput.value.trim();
+            if (!secret) {
+                alert('Ingresa el secreto de actualización.');
+                return;
+            }
+
+            localStorage.setItem('luxwrap_deploy_secret', secret);
+            button.disabled = true;
+            button.textContent = 'Actualizando...';
+            resultBox.style.display = 'block';
+            resultBox.className = '';
+            resultBox.textContent = 'Conectando con deploy.php...';
+
+            try {
+                const body = new URLSearchParams({ secret });
+                const response = await fetch('deploy.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+                    body
+                });
+                const text = await response.text();
+                let json;
+                try { json = JSON.parse(text); } catch (e) { json = null; }
+
+                resultBox.className = response.ok ? 'ok' : 'bad';
+                resultBox.textContent = json ? JSON.stringify(json, null, 2) : text;
+            } catch (error) {
+                resultBox.className = 'bad';
+                resultBox.textContent = 'Error de conexión: ' + error.message;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Actualizar sitio desde GitHub';
+            }
+        });
+    </script>
+</body>
+</html>
