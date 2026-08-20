@@ -1,0 +1,238 @@
+================================================================
+  LUXWRAP STUDIO - INSTRUCCIONES DE INSTALACIÓN Y DEPLOY
+  Repositorio: github.com/beto2l/luxwrapstudio
+================================================================
+
+TABLA DE CONTENIDO:
+1. Requisitos del Servidor
+2. Instalación Inicial en el Servidor
+3. Configurar Llave SSH en el Servidor
+4. Clonar el Repositorio en el Servidor
+5. Configurar Auto-Deploy
+6. Cómo Actualizar el Sitio
+7. Workflow de Trabajo Recomendado
+8. Solución de Problemas
+
+================================================================
+1. REQUISITOS DEL SERVIDOR
+================================================================
+
+- Hosting con acceso SSH (cPanel, Plesk, o VPS)
+- PHP 7.4 o superior
+- Git instalado en el servidor
+- Apache con mod_rewrite habilitado
+
+Para verificar si Git está instalado:
+  ssh tu-usuario@tu-servidor
+  git --version
+
+Si no está instalado, contactar al proveedor de hosting para
+que lo instalen, o si tienes acceso root:
+  sudo apt install git    (Ubuntu/Debian)
+  sudo yum install git    (CentOS)
+
+================================================================
+2. INSTALACIÓN INICIAL EN EL SERVIDOR
+================================================================
+
+OPCIÓN A: Si tu hosting tiene cPanel con Terminal
+------------------------------------------------
+1. Entrar a cPanel
+2. Ir a "Terminal" o "SSH Access"
+3. Seguir los pasos de la sección 4
+
+OPCIÓN B: Conexión SSH directa
+-------------------------------
+1. Abrir terminal en tu computadora
+2. Conectar al servidor:
+   ssh tu-usuario@tu-servidor.com
+
+================================================================
+3. CONFIGURAR LLAVE SSH EN EL SERVIDOR
+================================================================
+
+Esto permite que el servidor descargue código de GitHub sin
+pedir contraseña cada vez.
+
+PASO 1 - Generar llave SSH en el servidor:
+  ssh-keygen -t ed25519 -C "servidor-luxwrap"
+  (Presionar Enter 3 veces para aceptar defaults)
+
+PASO 2 - Copiar la llave pública:
+  cat ~/.ssh/id_ed25519.pub
+  (Copiar TODO el texto que aparece)
+
+PASO 3 - Agregar la llave a GitHub:
+  1. Ir a: https://github.com/beto2l/luxwrapstudio/settings/keys
+  2. Click "Add deploy key"
+  3. Title: "Servidor Producción"
+  4. Key: Pegar la llave copiada
+  5. Marcar "Allow write access" (opcional)
+  6. Click "Add key"
+
+PASO 4 - Probar conexión:
+  ssh -T git@github.com
+  (Debe decir: "Hi beto2l/luxwrapstudio! You've been granted access")
+
+================================================================
+4. CLONAR EL REPOSITORIO EN EL SERVIDOR
+================================================================
+
+PASO 1 - Navegar a la carpeta del sitio:
+  cd ~/public_html
+  (o donde sea que esté configurado tu dominio)
+
+PASO 2 - Si ya hay archivos existentes, hacer backup:
+  mkdir ~/backup_sitio_viejo
+  cp -r ~/public_html/* ~/backup_sitio_viejo/
+
+PASO 3 - Clonar el repositorio:
+  
+  OPCIÓN A - Si la carpeta public_html está vacía:
+    git clone git@github.com:beto2l/luxwrapstudio.git .
+    (El punto al final es importante - clona DENTRO de la carpeta actual)
+  
+  OPCIÓN B - Si ya hay archivos:
+    cd ~
+    git clone git@github.com:beto2l/luxwrapstudio.git luxwrap_temp
+    cp -r luxwrap_temp/* public_html/
+    cp -r luxwrap_temp/.* public_html/  (para archivos ocultos como .htaccess)
+    cd public_html
+    rm -rf ~/luxwrap_temp
+
+PASO 4 - Configurar permisos:
+  chmod -R 755 assets admin scripts
+  chmod -R 777 uploads data
+  chmod 644 data/*.json 2>/dev/null
+
+PASO 5 - Verificar que funciona:
+  Abrir en el navegador: https://luxwrapstudio.com
+  Debería verse la página de LuxWrap Studio
+
+================================================================
+5. CONFIGURAR AUTO-DEPLOY
+================================================================
+
+El archivo deploy.php permite actualizar el sitio visitando
+una URL secreta.
+
+PASO 1 - Editar deploy.php en el servidor:
+  nano ~/public_html/deploy.php
+  
+  Cambiar estas dos líneas:
+  
+  a) DEPLOY_SECRET: Cambiar 'change-this-secret' por algo único:
+     define('DEPLOY_SECRET', 'luxwrap_deploy_2026_' . md5('MI-CLAVE-SECRETA-UNICA'));
+  
+  b) SITE_PATH: Cambiar a la ruta real de tu sitio:
+     define('SITE_PATH', '/home/TU-USUARIO/public_html');
+     
+     Para encontrar tu ruta, ejecuta: pwd (en la carpeta del sitio)
+
+PASO 2 - Obtener tu SECRET KEY:
+  Para saber cuál es tu clave, ejecuta en PHP:
+  php -r "echo 'luxwrap_deploy_2026_' . md5('MI-CLAVE-SECRETA-UNICA');"
+  
+  O simplemente visita:
+  https://luxwrapstudio.com/deploy.php?secret=VALOR-QUE-OBTUVISTE
+
+PASO 3 - Probar el deploy:
+  Abrir en el navegador:
+  https://luxwrapstudio.com/deploy.php?secret=TU_SECRET_KEY
+  
+  Debe responder con JSON indicando éxito:
+  {"success": true, "message": "Sitio actualizado correctamente", ...}
+
+================================================================
+6. CÓMO ACTUALIZAR EL SITIO
+================================================================
+
+MÉTODO 1 - Desde GitHub (Recomendado)
+--------------------------------------
+1. Hacer cambios en GitHub (editar archivos online o push local)
+2. Visitar la URL de deploy:
+   https://luxwrapstudio.com/deploy.php?secret=TU_SECRET_KEY
+3. ¡Listo! El sitio se actualiza automáticamente
+
+MÉTODO 2 - Manual por SSH
+--------------------------
+1. Conectar al servidor: ssh tu-usuario@tu-servidor
+2. Ir al sitio: cd ~/public_html
+3. Descargar cambios: git pull origin main
+4. ¡Listo!
+
+MÉTODO 3 - Webhook Automático (Avanzado)
+-----------------------------------------
+Configurar un webhook en GitHub para que el deploy se ejecute
+automáticamente cada vez que hagas push:
+
+1. Ir a: https://github.com/beto2l/luxwrapstudio/settings/hooks
+2. Click "Add webhook"
+3. Payload URL: https://luxwrapstudio.com/deploy.php?secret=TU_SECRET_KEY
+4. Content type: application/json
+5. Events: "Just the push event"
+6. Click "Add webhook"
+
+Ahora cada push a GitHub actualizará el sitio automáticamente.
+
+================================================================
+7. WORKFLOW DE TRABAJO RECOMENDADO
+================================================================
+
+Para hacer cambios al sitio:
+
+DESDE GITHUB (más fácil):
+1. Ir a github.com/beto2l/luxwrapstudio
+2. Navegar al archivo que quieres cambiar
+3. Click el ícono de lápiz (editar)
+4. Hacer los cambios
+5. Click "Commit changes"
+6. Visitar URL de deploy para actualizar el servidor
+
+DESDE TU COMPUTADORA (para cambios grandes):
+1. Clonar el repo: git clone git@github.com:beto2l/luxwrapstudio.git
+2. Hacer cambios localmente
+3. git add .
+4. git commit -m "Descripción del cambio"
+5. git push origin main
+6. Visitar URL de deploy para actualizar el servidor
+
+================================================================
+8. SOLUCIÓN DE PROBLEMAS
+================================================================
+
+PROBLEMA: "Permission denied (publickey)" al clonar
+SOLUCIÓN: La llave SSH no está configurada correctamente.
+  - Verificar que la llave está en GitHub (sección 3)
+  - Verificar permisos: chmod 600 ~/.ssh/id_ed25519
+
+PROBLEMA: deploy.php da "Access denied"
+SOLUCIÓN: La clave secreta no coincide.
+  - Verificar el valor exacto de DEPLOY_SECRET en deploy.php
+  - Regenerar: php -r "echo md5('tu-clave');"
+
+PROBLEMA: deploy.php da error de git
+SOLUCIÓN: 
+  - Verificar que git está instalado: git --version
+  - Verificar que la carpeta es un repo: ls -la .git
+  - Verificar permisos del usuario web: whoami
+
+PROBLEMA: Los cambios no se ven después del deploy
+SOLUCIÓN:
+  - Limpiar caché del navegador (Ctrl+Shift+R)
+  - Verificar deploy.log para errores
+  - Verificar manualmente: cd public_html && git log -1
+
+PROBLEMA: El sitio se ve roto después de actualizar
+SOLUCIÓN:
+  - Revertir al commit anterior: git checkout HEAD~1
+  - O restaurar backup: cp -r ~/backup_sitio_viejo/* ~/public_html/
+
+================================================================
+  CONTACTO Y SOPORTE
+================================================================
+
+Repositorio: https://github.com/beto2l/luxwrapstudio
+Email técnico: luxwrapstudioky@gmail.com
+
+================================================================
