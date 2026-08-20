@@ -18,7 +18,11 @@ if (!$secret || !hash_equals($secret, $providedSecret)) {
     exit;
 }
 
-$sitePath = rtrim(luxwrap_env('SITE_PATH', __DIR__), '/');
+// deploy.php SIEMPRE vive en la raíz del sitio, así que __DIR__ es la ruta real y confiable.
+// Solo usamos SITE_PATH del .env si apunta a una carpeta que realmente existe;
+// de lo contrario caemos a __DIR__ para evitar el error "SITE_PATH no existe".
+$configuredPath = rtrim(luxwrap_env('SITE_PATH', ''), '/');
+$sitePath = ($configuredPath !== '' && is_dir($configuredPath)) ? $configuredPath : __DIR__;
 $branch = luxwrap_env('GIT_BRANCH', 'main');
 $repoZipUrl = luxwrap_env('GITHUB_ZIP_URL', 'https://github.com/beto2l/luxwrapstudio/archive/refs/heads/' . $branch . '.zip');
 $logFile = __DIR__ . '/deploy.log';
